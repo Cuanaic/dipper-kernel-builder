@@ -49,6 +49,7 @@ jobs:
           echo "=== patch verify ==="
           grep -n "real_status_page" kernel/feature/selinux_hide.c | head
           echo "KSUDBG lines: $(grep -c KSUDBG kernel/feature/selinux_hide.c)"
+          echo "hidden-type hits: $(grep -c ksu_ctx_has_hidden_type kernel/feature/selinux_hide.c)"
 
       - name: Build
         env:

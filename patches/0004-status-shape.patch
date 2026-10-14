@@ -1,0 +1,52 @@
+diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
+index 7c38247..a6f725b 100644
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -59,7 +59,6 @@ static bool fake_status_initialize_key __read_mostly = false;
+ #endif
+ 
+ __maybe_static struct page *fake_status = NULL;
+-__maybe_static struct page *real_status_page = NULL; /* live real page pass-through */
+ static struct mutex *ksu_selinux_status_lock = NULL;
+ static bool selinux_hide_live_logged = false;
+ __maybe_static void initialize_fake_status();
+@@ -457,13 +456,13 @@ static int my_sel_open_handle_status(struct inode *inode, struct file *filp)
+     if (likely(ksu_get_uid_t(current_uid()) >= 10000 && ksu_selinux_hide_enabled)) {
+         void *data;
+         mutex_lock(ksu_selinux_status_lock);
+-        data = real_status_page;
++        data = fake_status;
+         mutex_unlock(ksu_selinux_status_lock);
+         if (data) {
+             filp->private_data = data;
+             if (!selinux_hide_live_logged) {
+                 selinux_hide_live_logged = true;
+-                pr_info("selinux_hide: serving LIVE real status page for uid>=10000\n");
++                pr_info("selinux_hide: serving normalized fake status page for uid>=10000\n");
+             }
+             pr_info_ratelimited("KSUDBG status-open pid=%d uid=%u comm=%.16s\n",
+                                 current->pid, ksu_get_uid_t(current_uid()), current->comm);
+@@ -927,7 +926,6 @@ __maybe_static void initialize_fake_status()
+         pr_warn("initialize_fake_status: status_page not exist\n");
+         goto out;
+     }
+-    real_status_page = selinux_status_page;
+ 
+     struct selinux_kernel_status *status = page_address(selinux_status_page);
+     if (!status->enforcing && !ksu_late_loaded) {
+@@ -960,6 +958,15 @@ __maybe_static void initialize_fake_status()
+         }
+     }
+ 
++    /* Detectors flag a never-updated page (sequence==0 && policyload==0) as a
++     * KernelSU fake-status artifact.  Serve the shape a stock boot ends with:
++     * loads recorded (positive policyload), stable even sequence, enforcing. */
++    new_status->sequence = 4;
++    new_status->policyload = 1;
++    if (!new_status->enforcing) {
++        new_status->enforcing = 1;
++    }
++
+     fake_status = new_page;
+     pr_info("initialize_fake_status initialized: sequence=%d, policyload=%d, enforcing=%d\n", new_status->sequence,
+             new_status->policyload, new_status->enforcing);

@@ -1,0 +1,224 @@
+diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
+index a57ed01..46403a5 100644
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -135,6 +135,57 @@ static void ksu_security_compute_av_user(u32 ssid, u32 tsid, u16 tclass, struct
+ static write_op_fn *context_write, *access_write;
+ static write_op_fn orig_context_write, orig_access_write;
+ 
++/* ---------------------------------------------------------------------------
++ * ksu selinux_hide: stock-consistency filter for app-facing SELinux oracles.
++ *
++ * The ROM sepolicy ships KernelSU helper types (su, su_exec, su_key,
++ * su_userfaultfd, adbroot*).  A stock policy never defines them, so any
++ * app-visible oracle answer (context validation, access vector, setprocattr)
++ * must behave as if those types did not exist: parse failure / -EINVAL.
++ * Applies only to uid >= 10000 callers, consistent with the other hooks.
++ * ------------------------------------------------------------------------- */
++static bool ksu_ctx_has_hidden_type(const char *s, size_t len)
++{
++    size_t i, field = 0, ts = 0, te = 0, tl;
++
++    if (!s || len < 5)
++        return false;
++
++    for (i = 0; i < len; i++) {
++        if (s[i] == ':') {
++            field++;
++            if (field == 2) {
++                ts = i + 1;
++            } else if (field == 3) {
++                te = i;
++                break;
++            }
++        }
++    }
++    if (field < 2)
++        return false;
++    if (te == 0)
++        te = len; /* type is the last component */
++    if (te <= ts)
++        return false;
++
++    tl = te - ts;
++    while (tl > 0 && (s[ts + tl - 1] == '\0' || s[ts + tl - 1] == '\n' || s[ts + tl - 1] == ' '))
++        tl--;
++    if (tl == 0)
++        return false;
++
++    if (tl == 2 && s[ts] == 's' && s[ts + 1] == 'u')
++        return true; /* su */
++    if (tl >= 3 && !memcmp(s + ts, "su_", 3))
++        return true; /* su_exec, su_key, su_userfaultfd, ... */
++    if (tl >= 7 && !memcmp(s + ts, "adbroot", 7))
++        return true; /* adbroot, adbroot_exec, adbroot_service, ... */
++    if (tl >= 3 && !memcmp(s + ts, "ksu", 3))
++        return true; /* ksu, ksu_file (runtime-added, belt and braces) */
++    return false;
++}
++
+ static ssize_t my_write_context(struct file *file, char *buf, size_t size)
+ {
+     // apply to all app uids
+@@ -149,6 +200,10 @@ static ssize_t my_write_context(struct file *file, char *buf, size_t size)
+     length = avc_has_perm(current_sid(), SECINITSID_SECURITY, SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
+     if (length)
+         goto out;
++    if (ksu_ctx_has_hidden_type(buf, size)) {
++        length = -EINVAL;
++        goto out;
++    }
+     length = security_context_to_sid_with_policy(backup_sepolicy, buf, size, &sid, SECSID_NULL, GFP_KERNEL);
+     if (length)
+         goto out;
+@@ -170,6 +225,10 @@ static ssize_t my_write_context(struct file *file, char *buf, size_t size)
+     if (length)
+         goto out;
+ 
++    if (ksu_ctx_has_hidden_type(buf, size)) {
++        length = -EINVAL;
++        goto out;
++    }
+     length = security_context_to_sid(&fake_state, buf, size, &sid, GFP_KERNEL);
+     if (length)
+         goto out;
+@@ -182,6 +241,10 @@ static ssize_t my_write_context(struct file *file, char *buf, size_t size)
+     if (length)
+         goto out;
+ 
++    if (ksu_ctx_has_hidden_type(buf, size)) {
++        length = -EINVAL;
++        goto out;
++    }
+     length = ksu_security_context_to_sid(buf, size, &sid, GFP_KERNEL);
+     if (length)
+         goto out;
+@@ -202,6 +265,8 @@ static ssize_t my_write_context(struct file *file, char *buf, size_t size)
+     memcpy(buf, canon, len);
+     length = len;
+ out:
++    if (ksu_get_uid_t(current_uid()) >= 10000) {
++    }
+     kfree(canon);
+     return length;
+ }
+@@ -243,6 +308,12 @@ static ssize_t my_write_access(struct file *file, char *buf, size_t size)
+     if (sscanf(buf, "%s %s %hu", scon, tcon, &tclass) != 3)
+         goto out;
+ 
++
++    if (ksu_ctx_has_hidden_type(scon, strlen(scon)) || ksu_ctx_has_hidden_type(tcon, strlen(tcon))) {
++        length = -EINVAL;
++        goto out;
++    }
++
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+     length = security_context_to_sid_with_policy(backup_sepolicy, scon, strlen(scon), &ssid, SECSID_NULL, GFP_KERNEL);
+     if (length)
+@@ -280,6 +351,8 @@ static ssize_t my_write_access(struct file *file, char *buf, size_t size)
+     length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT, "%x %x %x %x %u %x", avd.allowed, 0xffffffff, avd.auditallow,
+                        avd.auditdeny, avd.seqno, avd.flags);
+ out:
++    if (ksu_get_uid_t(current_uid()) >= 10000) {
++    }
+     kfree(tcon);
+     kfree(scon);
+     return length;
+@@ -332,6 +405,10 @@ int __nocfi ksu_handle_selinux_setprocattr(struct task_struct *p, char *name, vo
+             str[size - 1] = 0;
+             size--;
+         }
++
++        if (ksu_ctx_has_hidden_type(str, size)) {
++            return -EINVAL;
++        }
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+         error = security_context_to_sid_with_policy(backup_sepolicy, str, size, &sid, SECSID_NULL, GFP_KERNEL);
+ #elif defined(KSU_COMPAT_USE_SELINUX_STATE)
+@@ -455,7 +532,7 @@ extern void ksu_register_setprocattr_lsm_hook();
+ static int ksu_selinux_hide_enable()
+ {
+     int ret;
+-    pr_info("selinux_hide: init selinux hide\n");
++    pr_debug("selinux_hide: init selinux hide\n");
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
+     if (!backup_sepolicy) {
+         pr_err("no backup sepolicy available, please save feature and reboot to retry!\n");
+@@ -557,7 +634,7 @@ static int ksu_selinux_hide_enable()
+     }
+ 
+     context_write = &selinux_write_op[SEL_CONTEXT];
+-    pr_info("selinux_hide: context_write: 0x%lx [%pSb]\n", (unsigned long)*context_write, *context_write);
++    pr_debug("selinux_hide: context_write: 0x%lx [%pSb]\n", (unsigned long)*context_write, *context_write);
+     write_op_fn my = my_write_context;
+     orig_context_write = *context_write;
+     ret = ksu_patch_text(context_write, &my, sizeof(my), KSU_PATCH_TEXT_FLUSH_DCACHE);
+@@ -567,7 +644,7 @@ static int ksu_selinux_hide_enable()
+     }
+ 
+     access_write = &selinux_write_op[SEL_ACCESS];
+-    pr_info("selinux_hide: access_write: 0x%lx [%pSb]\n", (unsigned long)*access_write, *access_write);
++    pr_debug("selinux_hide: access_write: 0x%lx [%pSb]\n", (unsigned long)*access_write, *access_write);
+     my = my_write_access;
+     orig_access_write = *access_write;
+     ret = ksu_patch_text(access_write, &my, sizeof(my), KSU_PATCH_TEXT_FLUSH_DCACHE);
+@@ -633,7 +710,7 @@ unhook:
+ 
+ static void ksu_selinux_hide_disable()
+ {
+-    pr_info("selinux_hide: exit selinux hide\n");
++    pr_debug("selinux_hide: exit selinux hide\n");
+ 
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0) && defined(KSU_COMPAT_USE_SELINUX_STATE) &&                          \
+     !defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
+@@ -661,7 +738,7 @@ static int selinux_hide_feature_set(u64 value)
+ {
+     bool enable = value != 0;
+     int ret = 0;
+-    pr_info("selinux_hide: set to %d\n", enable);
++    pr_debug("selinux_hide: set to %d\n", enable);
+     mutex_lock(&selinux_hide_mutex);
+     ksu_selinux_hide_enabled = enable;
+     if (enable) {
+@@ -755,7 +832,7 @@ void ksu_selinux_hide_drop_backup_if_unused()
+     mutex_lock(&selinux_hide_mutex);
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
+     if (!ksu_selinux_hide_running && backup_sepolicy) {
+-        pr_info("selinux_hide is not enabled - drop backup_sepolicy\n");
++        pr_debug("selinux_hide is not enabled - drop backup_sepolicy\n");
+         sidtab_destroy(backup_sepolicy->sidtab);
+         kfree(backup_sepolicy->sidtab);
+         ksu_destroy_sepolicy(backup_sepolicy);
+@@ -763,7 +840,7 @@ void ksu_selinux_hide_drop_backup_if_unused()
+     }
+ #elif defined(KSU_COMPAT_USE_SELINUX_STATE)
+     if (!ksu_selinux_hide_running && backup_policydb && backup_sidtab) {
+-        pr_info("selinux_hide is not enabled - drop backup_policydb\n");
++        pr_debug("selinux_hide is not enabled - drop backup_policydb\n");
+         sidtab_destroy(backup_sidtab);
+         kfree(backup_sidtab);
+         ksu_destroy_policydb(backup_policydb);
+@@ -857,8 +934,22 @@ __maybe_static void initialize_fake_status()
+         }
+     }
+ 
++    /* Present the stock kernel creation-sentinel shape on every view.
++     * sequence/policyload stay zero until a real load bumps them; the real
++     * page is normalized the same way so every reader sees one shape. */
++    new_status->sequence = 0;
++    new_status->policyload = 0;
++    if (!new_status->enforcing) {
++        new_status->enforcing = 1;
++    }
++    status->sequence = 0;
++    status->policyload = 0;
++    if (!status->enforcing) {
++        status->enforcing = 1;
++    }
++
+     fake_status = new_page;
+-    pr_info("initialize_fake_status initialized: sequence=%d, policyload=%d, enforcing=%d\n", new_status->sequence,
++    pr_debug("initialize_fake_status initialized: sequence=%d, policyload=%d, enforcing=%d\n", new_status->sequence,
+             new_status->policyload, new_status->enforcing);
+ 
+ out:

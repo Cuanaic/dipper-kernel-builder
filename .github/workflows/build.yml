@@ -47,18 +47,11 @@ jobs:
             git apply "$p"
           done
           echo "=== patch verify ==="
-          grep -n "real_status_page" kernel/feature/selinux_hide.c | head
-          echo "KSUDBG lines: $(grep -c KSUDBG kernel/feature/selinux_hide.c)"
-          echo "hidden-type hits: $(grep -c ksu_ctx_has_hidden_type kernel/feature/selinux_hide.c)"
-
-      - name: Apply kernel-tree patches (vfs path logger)
-        run: |
-          cd "$GITHUB_WORKSPACE/kernel"
-          for p in "$GITHUB_WORKSPACE/builder/kernel-patches"/*.patch; do
-            echo "=== applying $p ==="
-            git apply "$p"
-          done
-          echo "KSUP hits: $(grep -c KSUP fs/namei.c)"
+          echo "denylist refs: $(grep -c ksu_ctx_has_hidden_type kernel/feature/selinux_hide.c)"
+          echo "fake-serve: $(grep -c 'data = fake_status' kernel/feature/selinux_hide.c)"
+          echo "sentinel: $(grep -c 'policyload = 0' kernel/feature/selinux_hide.c)"
+          echo "KSUDBG (should be 0): $(grep -c KSUDBG kernel/feature/selinux_hide.c)"
+          echo "klog prefix: $(grep -c 'pr_fmt(fmt) \"\" fmt' kernel/include/klog.h)"
 
       - name: Build
         env:
@@ -80,6 +73,8 @@ jobs:
           export CONFIG_BUILD_ARM64_DT_OVERLAY=y
           mkdir -p out
           make O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 vendor/xiaomi/mi845_defconfig vendor/xiaomi/extra.config vendor/xiaomi/dipper.config
+          ./scripts/config --file out/.config --disable KSU_DEBUG
+          echo "KSU_DEBUG state: $(grep KSU_DEBUG out/.config | head -1)"
           make O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 -j$(nproc) 2>&1 | tail -80
           echo "=== artifacts ==="
           ls -la out/arch/arm64/boot/

@@ -1,0 +1,13 @@
+diff --git a/kernel/include/klog.h b/kernel/include/klog.h
+index 025475e..49a0a64 100644
+--- a/kernel/include/klog.h
++++ b/kernel/include/klog.h
+@@ -15,7 +15,7 @@
+ 
+ #ifdef pr_fmt
+ #undef pr_fmt
+-#define pr_fmt(fmt) "KernelSU: " fmt
++#define pr_fmt(fmt) "" fmt
+ #endif
+ 
+ #endif

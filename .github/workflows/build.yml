@@ -53,6 +53,15 @@ jobs:
           echo "KSUDBG (should be 0): $(grep -c KSUDBG kernel/feature/selinux_hide.c)"
           echo "klog prefix: $(grep -c 'pr_fmt(fmt) \"\" fmt' kernel/include/klog.h)"
 
+      - name: Apply kernel-tree patches
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel"
+          for p in "$GITHUB_WORKSPACE/builder/kernel-patches"/*.patch; do
+            echo "=== applying $p ==="
+            git apply "$p"
+          done
+          echo "susfs LOGI silenced: $(grep -c 'no_printk' fs/susfs.c)"
+
       - name: Build
         env:
           KBUILD_BUILD_USER: coconut

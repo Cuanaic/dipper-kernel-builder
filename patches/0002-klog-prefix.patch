@@ -1,8 +1,8 @@
 diff --git a/kernel/include/klog.h b/kernel/include/klog.h
-index 025475e..49a0a64 100644
+index 025475e..054be4c 100644
 --- a/kernel/include/klog.h
 +++ b/kernel/include/klog.h
-@@ -15,7 +15,7 @@
+@@ -15,7 +15,18 @@
  
  #ifdef pr_fmt
  #undef pr_fmt
@@ -10,4 +10,15 @@ index 025475e..49a0a64 100644
 +#define pr_fmt(fmt) "" fmt
  #endif
  
++/* informational logs are compiled out: they leak implementation-identifying
++ * strings (module names, helper symbols) through kernel log consumers */
++#undef pr_info
++#define pr_info(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
++#undef pr_warn
++#define pr_warn(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
++#undef pr_alert
++#define pr_alert(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
++#undef pr_notice
++#define pr_notice(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
++
  #endif

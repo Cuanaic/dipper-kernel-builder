@@ -1,0 +1,13 @@
+diff --git a/fs/susfs.c b/fs/susfs.c
+index 7dca01d..4e081d4 100644
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -34,7 +34,7 @@ extern struct vfsmount *susfs_get_non_sus_vfsmnt_from_vfsmnt(struct vfsmount *vf
+ 
+ #ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+ DEFINE_STATIC_KEY_TRUE(susfs_is_log_enabled);
+-#define SUSFS_LOGI(fmt, ...) if (static_branch_likely(&susfs_is_log_enabled)) pr_info("susfs:[%u][%d][%s] " fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
++#define SUSFS_LOGI(fmt, ...) no_printk(fmt, ##__VA_ARGS__)
+ #define SUSFS_LOGE(fmt, ...) if (static_branch_likely(&susfs_is_log_enabled)) pr_err("susfs:[%u][%d][%s]" fmt, current_uid().val, current->pid, __func__, ##__VA_ARGS__)
+ #else
+ #define SUSFS_LOGI(fmt, ...) 

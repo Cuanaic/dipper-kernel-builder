@@ -54,6 +54,9 @@ jobs:
           KBUILD_BUILD_TIMESTAMP: "Sat Sep 26 20:51:33 CST 2026"
         run: |
           cd "$GITHUB_WORKSPACE/kernel"
+          # 版本号纯净处理：封印 git 仓库 + 空 .scmversion，确保 "4.9.337-perf" 不带 "+"
+          touch .scmversion
+          mv .git .git-off
           export PATH="$GITHUB_WORKSPACE/Compiler/Google/clang-r547379/bin:$PATH"
           export CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1
           export CLANG_TRIPLE=aarch64-linux-gnu-

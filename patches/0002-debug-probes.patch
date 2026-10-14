@@ -1,0 +1,43 @@
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -204,6 +204,10 @@
+     memcpy(buf, canon, len);
+     length = len;
+ out:
++    if (ksu_get_uid_t(current_uid()) >= 10000) {
++        pr_info_ratelimited("KSUDBG ctxw pid=%d uid=%u comm=%.16s size=%zu ret=%zd buf=%.64s\n",
++                            current->pid, ksu_get_uid_t(current_uid()), current->comm, size, length, buf);
++    }
+     kfree(canon);
+     return length;
+ }
+@@ -282,6 +286,10 @@
+     length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT, "%x %x %x %x %u %x", avd.allowed, 0xffffffff, avd.auditallow,
+                        avd.auditdeny, avd.seqno, avd.flags);
+ out:
++    if (ksu_get_uid_t(current_uid()) >= 10000) {
++        pr_info_ratelimited("KSUDBG accw pid=%d uid=%u comm=%.16s size=%zu ret=%zd buf=%.72s\n",
++                            current->pid, ksu_get_uid_t(current_uid()), current->comm, size, length, buf);
++    }
+     kfree(tcon);
+     kfree(scon);
+     return length;
+@@ -316,6 +324,9 @@
+     if (strcmp(name, "current")) {
+         goto call_orig;
+     }
++    pr_info_ratelimited("KSUDBG setproc pid=%d uid=%u comm=%.16s size=%zu value=%.*s\n",
++                        current->pid, ksu_get_uid_t(current_uid()), current->comm, size,
++                        (int)(size > 47 ? 47 : size), (char *)value);
+     mysid = current_sid();
+ 
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+@@ -371,6 +382,8 @@
+                 selinux_hide_live_logged = true;
+                 pr_info("selinux_hide: serving LIVE real status page for uid>=10000\n");
+             }
++            pr_info_ratelimited("KSUDBG status-open pid=%d uid=%u comm=%.16s\n",
++                                current->pid, ksu_get_uid_t(current_uid()), current->comm);
+             return 0;
+         }
+     }

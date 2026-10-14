@@ -1,0 +1,48 @@
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -57,11 +57,13 @@
+ #else
+ static bool fake_status_initialize_key __read_mostly = false;
+ #endif
+ 
+ __maybe_static struct page *fake_status = NULL;
++__maybe_static struct page *real_status_page = NULL; /* live real page pass-through */
+ static struct mutex *ksu_selinux_status_lock = NULL;
++static bool selinux_hide_live_logged = false;
+ __maybe_static void initialize_fake_status();
+ 
+ #ifndef KSU_COMPAT_HAS_SUSFS_FEATURE_SELINUX_HIDE
+ enum sel_inos {
+     SEL_ROOT_INO = 2,
+@@ -359,14 +361,18 @@
+ static int my_sel_open_handle_status(struct inode *inode, struct file *filp)
+ {
+     if (likely(ksu_get_uid_t(current_uid()) >= 10000 && ksu_selinux_hide_enabled)) {
+         void *data;
+         mutex_lock(ksu_selinux_status_lock);
+-        data = fake_status;
++        data = real_status_page;
+         mutex_unlock(ksu_selinux_status_lock);
+         if (data) {
+             filp->private_data = data;
++            if (!selinux_hide_live_logged) {
++                selinux_hide_live_logged = true;
++                pr_info("selinux_hide: serving LIVE real status page for uid>=10000\n");
++            }
+             return 0;
+         }
+     }
+ 
+     int ret = orig_sel_open_handle_status(inode, filp);
+@@ -823,10 +829,11 @@
+ 
+     if (!selinux_status_page) {
+         pr_warn("initialize_fake_status: status_page not exist\n");
+         goto out;
+     }
++    real_status_page = selinux_status_page;
+ 
+     struct selinux_kernel_status *status = page_address(selinux_status_page);
+     if (!status->enforcing && !ksu_late_loaded) {
+         pr_warn("initialize_fake_status: skip not enforcing\n");
+         goto out;

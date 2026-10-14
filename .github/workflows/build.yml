@@ -1,0 +1,72 @@
+name: build-dipper-kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout builder repo
+        uses: actions/checkout@v4
+        with:
+          path: builder
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev zip unzip python3 wget cpio rsync
+
+      - name: Download clang-r547379
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android16-release/clang-r547379.tar.gz
+          mkdir -p Compiler/Google/clang-r547379
+          tar xzf clang-r547379.tar.gz -C Compiler/Google/clang-r547379
+          Compiler/Google/clang-r547379/bin/clang --version | head -2
+
+      - name: Clone kernel source (Coconutat, pinned branch)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git clone --depth 1 -b lineage-22.2-ReSukiSU https://github.com/Coconutat/android_kernel_xiaomi_sdm845_lineageos_Exp.git kernel
+
+      - name: Setup ReSukiSU (pinned) and apply status fix
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel"
+          git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
+          git -C KernelSU checkout 4c5c8cedaf3cecf297f9b529362e529f506e6891
+          ln -sf "$(realpath --relative-to=drivers KernelSU/kernel)" drivers/kernelsu
+          grep -q "kernelsu" drivers/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
+          grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
+          cd KernelSU
+          git apply "$GITHUB_WORKSPACE/builder/patches/0001-selinux-hide-live-status.patch"
+          echo "=== patch verify ==="
+          grep -n "real_status_page" kernel/feature/selinux_hide.c | head
+
+      - name: Build
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel"
+          export PATH="$GITHUB_WORKSPACE/Compiler/Google/clang-r547379/bin:$PATH"
+          export CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export ARCH=arm64 SUBARCH=arm64
+          export CONFIG_BUILD_ARM64_DT_OVERLAY=y
+          mkdir -p out
+          make O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 vendor/xiaomi/mi845_defconfig vendor/xiaomi/extra.config vendor/xiaomi/dipper.config
+          make O=out ARCH=arm64 CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1 -j$(nproc) 2>&1 | tail -80
+          echo "=== artifacts ==="
+          ls -la out/arch/arm64/boot/
+
+      - name: Upload kernel images
+        uses: actions/upload-artifact@v4
+        with:
+          name: dipper-kernel-images
+          path: |
+            kernel/out/arch/arm64/boot/Image.gz
+            kernel/out/arch/arm64/boot/Image.gz-dtb
+          if-no-files-found: error

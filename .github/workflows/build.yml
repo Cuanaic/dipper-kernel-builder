@@ -47,6 +47,11 @@ jobs:
           grep -n "real_status_page" kernel/feature/selinux_hide.c | head
 
       - name: Build
+        env:
+          KBUILD_BUILD_USER: coconut
+          KBUILD_BUILD_HOST: coconut-X99
+          KBUILD_BUILD_VERSION: "2"
+          KBUILD_BUILD_TIMESTAMP: "Sat Sep 26 20:51:33 CST 2026"
         run: |
           cd "$GITHUB_WORKSPACE/kernel"
           export PATH="$GITHUB_WORKSPACE/Compiler/Google/clang-r547379/bin:$PATH"

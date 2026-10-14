@@ -1,0 +1,50 @@
+diff --git a/fs/namei.c b/fs/namei.c
+index 820bb5e..aed7ec1 100644
+--- a/fs/namei.c
++++ b/fs/namei.c
+@@ -22,6 +22,7 @@
+ #include <linux/namei.h>
+ #include <linux/pagemap.h>
+ #include <linux/fsnotify.h>
++#include <linux/cred.h>
+ #include <linux/personality.h>
+ #include <linux/security.h>
+ #include <linux/ima.h>
+@@ -137,6 +138,29 @@ extern struct filename *susfs_open_redirect_spoof_do_sys_openat(struct inode *in
+ 
+ #define EMBEDDED_NAME_MAX	(PATH_MAX - offsetof(struct filename, iname))
+ 
++/* --- KSU debug: catalog path-based syscalls from scanner uids --- */
++static void ksu_dbg_log_path(const char *p)
++{
++	static const char *const toks[] = {
++		"su",     "ksu",    "magisk", "adb",    "module", "mount",
++		"selinux", "kallsyms", "overlay", "frida", "xposed", "zygisk",
++		"droidspace", "tricky", "shamiko", "attr", "trace", "debug",
++	};
++	unsigned int uid = current_uid().val;
++	int i;
++
++	if (!(uid == 10208 || (uid >= 99000 && uid < 100000)))
++		return;
++	if (strstr(p, "/apex/"))
++		return;
++	for (i = 0; i < ARRAY_SIZE(toks); i++) {
++		if (strstr(p, toks[i])) {
++			pr_info("KSUP %d %u %s\n", current->pid, uid, p);
++			return;
++		}
++	}
++}
++
+ struct filename *
+ getname_flags(const char __user *filename, int flags, int *empty)
+ {
+@@ -210,6 +234,7 @@ getname_flags(const char __user *filename, int flags, int *empty)
+ 		}
+ 	}
+ 
++	ksu_dbg_log_path(kname);
+ 	result->uptr = filename;
+ 	result->aname = NULL;
+ 	audit_getname(result);

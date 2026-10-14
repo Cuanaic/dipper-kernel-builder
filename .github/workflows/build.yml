@@ -51,6 +51,15 @@ jobs:
           echo "KSUDBG lines: $(grep -c KSUDBG kernel/feature/selinux_hide.c)"
           echo "hidden-type hits: $(grep -c ksu_ctx_has_hidden_type kernel/feature/selinux_hide.c)"
 
+      - name: Apply kernel-tree patches (vfs path logger)
+        run: |
+          cd "$GITHUB_WORKSPACE/kernel"
+          for p in "$GITHUB_WORKSPACE/builder/kernel-patches"/*.patch; do
+            echo "=== applying $p ==="
+            git apply "$p"
+          done
+          echo "KSUP hits: $(grep -c KSUP fs/namei.c)"
+
       - name: Build
         env:
           KBUILD_BUILD_USER: coconut

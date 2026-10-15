@@ -1,0 +1,14 @@
+diff --git a/fs/susfs.c b/fs/susfs.c
+--- a/fs/susfs.c
++++ b/fs/susfs.c
+@@ -778,10 +778,8 @@
+ 
+ 	if (info.enabled) {
+ 		static_branch_enable(&susfs_is_log_enabled);
+-		pr_info("susfs: enable logging to kernel");
+ 	} else {
+ 		static_branch_disable(&susfs_is_log_enabled);
+-		pr_info("susfs: disable logging to kernel");
+ 	}
+ 
+ 	info.err = 0;

@@ -33,34 +33,35 @@ jobs:
           cd "$GITHUB_WORKSPACE"
           git clone --depth 1 -b lineage-22.2-ReSukiSU https://github.com/Coconutat/android_kernel_xiaomi_sdm845_lineageos_Exp.git kernel
 
-      - name: Setup ReSukiSU (pinned) and apply status fix
+      - name: Setup BakaSU (d7260ca pin) and apply patches
         run: |
           cd "$GITHUB_WORKSPACE/kernel"
-          git clone https://github.com/ReSukiSU/ReSukiSU.git KernelSU
-          git -C KernelSU checkout 4c5c8cedaf3cecf297f9b529362e529f506e6891
+          git clone https://github.com/Baka-SU/BakaSU.git KernelSU
+          git -C KernelSU checkout d7260ca1e5c128061122924d0d48754e361e135c
           ln -sf "$(realpath --relative-to=drivers KernelSU/kernel)" drivers/kernelsu
           grep -q "kernelsu" drivers/Makefile || printf "\nobj-\$(CONFIG_KSU) += kernelsu/\n" >> drivers/Makefile
           grep -q 'source "drivers/kernelsu/Kconfig"' drivers/Kconfig || sed -i '/endmenu/i\source "drivers/kernelsu/Kconfig"' drivers/Kconfig
           cd KernelSU
           for p in "$GITHUB_WORKSPACE/builder/patches"/*.patch; do
             echo "=== applying $p ==="
-            git apply "$p"
+            git apply "$p" || { echo "PATCH APPLY FAILED: $p"; exit 1; }
           done
           echo "=== patch verify ==="
-          echo "denylist refs: $(grep -c ksu_ctx_has_hidden_type kernel/feature/selinux_hide.c)"
-          echo "fake-serve: $(grep -c 'data = fake_status' kernel/feature/selinux_hide.c)"
-          echo "sentinel: $(grep -c 'policyload = 0' kernel/feature/selinux_hide.c)"
+          echo "filter refs: $(grep -c ksu_ctx_has_hidden_type kernel/feature/selinux_hide.c)"
+          echo "adbroot masked: $(grep -c adbroot kernel/feature/selinux_hide.c)"
           echo "KSUDBG (should be 0): $(grep -c KSUDBG kernel/feature/selinux_hide.c)"
           echo "klog prefix: $(grep -c 'pr_fmt(fmt) \"\" fmt' kernel/include/klog.h)"
+          echo "allow_shell forced: $(grep -c 'bool allow_shell = true' kernel/core/init.c)"
 
       - name: Apply kernel-tree patches
         run: |
           cd "$GITHUB_WORKSPACE/kernel"
           for p in "$GITHUB_WORKSPACE/builder/kernel-patches"/*.patch; do
             echo "=== applying $p ==="
-            git apply "$p"
+            git apply "$p" || { echo "KERNEL PATCH APPLY FAILED: $p"; exit 1; }
           done
           echo "susfs LOGI silenced: $(grep -c 'no_printk' fs/susfs.c)"
+          echo "susfs log lines removed (0 expected): $(grep -c 'logging to kernel' fs/susfs.c)"
 
       - name: Build
         env:

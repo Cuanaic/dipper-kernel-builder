@@ -1,9 +1,9 @@
 diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
-@@ -237,6 +237,56 @@
- }
- #endif
+@@ -135,6 +135,56 @@
+ static write_op_fn *context_write, *access_write;
+ static write_op_fn orig_context_write, orig_access_write;
  
 +/* ---------------------------------------------------------------------------
 + * ksu selinux_hide: stock-consistency filter for app-facing SELinux oracles.
@@ -58,7 +58,18 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
  static ssize_t my_write_context(struct file *file, char *buf, size_t size)
  {
      // apply to all app uids
-@@ -252,6 +302,11 @@
+@@ -149,6 +199,10 @@
+     length = avc_has_perm(current_sid(), SECINITSID_SECURITY, SECCLASS_SECURITY, SECURITY__CHECK_CONTEXT, NULL);
+     if (length)
+         goto out;
++    if (ksu_ctx_has_hidden_type(buf, size)) {
++        length = -EINVAL;
++        goto out;
++    }
+     length = security_context_to_sid_with_policy(backup_sepolicy, buf, size, &sid, SECSID_NULL, GFP_KERNEL);
+     if (length) {
+         goto out;
+@@ -174,6 +228,11 @@
      if (length)
          goto out;
  
@@ -67,10 +78,22 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 +        goto out;
 +    }
 +
- #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
-     length = security_context_to_sid_with_policy(backup_sepolicy, buf, size, &sid, SECSID_NULL, GFP_KERNEL, NULL, NULL);
+     length = security_context_to_sid(&fake_state, buf, size, &sid, GFP_KERNEL);
      if (length) {
-@@ -334,6 +389,11 @@
+         goto out;
+@@ -190,6 +249,11 @@
+     if (length)
+         goto out;
+ 
++    if (ksu_ctx_has_hidden_type(buf, size)) {
++        length = -EINVAL;
++        goto out;
++    }
++
+     length = ksu_security_context_to_sid(buf, size, &sid, GFP_KERNEL);
+     if (length) {
+         goto out;
+@@ -258,6 +322,11 @@
      sconlen = strlen(scon);
      tconlen = strlen(tcon);
  
@@ -79,16 +102,16 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 +        goto out;
 +    }
 +
- #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
-     length =
-         security_context_to_sid_with_policy(backup_sepolicy, scon, sconlen, &ssid, SECSID_NULL, GFP_KERNEL, NULL, NULL);
-@@ -475,6 +535,9 @@
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+     length = security_context_to_sid_with_policy(backup_sepolicy, scon, sconlen, &ssid, SECSID_NULL, GFP_KERNEL);
+     if (length) {
+@@ -358,6 +427,9 @@
              str[size - 1] = 0;
              size--;
          }
 +        if (ksu_ctx_has_hidden_type(str, size)) {
 +            return -EINVAL;
 +        }
- #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_SELINUX_POLICY_STRUCT)
-         error2 = security_context_to_sid_with_policy(backup_sepolicy, value, size, &tmp_sid, SECSID_NULL, GFP_KERNEL,
-                                                      &sid, &error);
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+         error = security_context_to_sid_with_policy(backup_sepolicy, str, size, &sid, SECSID_NULL, GFP_KERNEL);
+ #elif defined(KSU_COMPAT_USE_SELINUX_STATE)
